@@ -1,0 +1,51 @@
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+
+    services:
+      # Docker-in-Docker service (allows Docker to be used inside a container)
+      docker:
+        image: docker:19.03.12
+        options: --privileged
+
+    steps:
+    # 1. Check out the repository
+    - name: Check out repository
+      uses: actions/checkout@v4
+
+    # 2. Set up Docker Buildx (this is needed for multi-platform builds)
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    # 3. Install docker-compose
+    - name: Install docker-compose
+      run: |
+        curl -L "https://github.com/docker/compose/releases/download/$(curl -s https://api.github.com/repos/docker/compose/releases/latest | jq -r .tag_name)/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        chmod +x /usr/local/bin/docker-compose
+        docker-compose --version  # Verify installation
+
+    # 4. Build the Docker image
+    - name: Build the Docker image
+      run: | 
+        docker build ./src --file Dockerfile --tag connectivity_bridge_ros2_json_mqtt_image:latest
+
+    # 5. Run the services using docker-compose, wait for 1 minute, then pass
+    - name: Launch services and wait for 1 minute
+      run: |
+        # Start all services in the background
+        docker-compose -f docker-compose.yml up -d
+        
+        # Wait for 1 minute
+        sleep 60
+
+    # 6. Clean up (remove containers and images after test)
+    - name: Clean up
+      run: |
+        docker-compose down
+        docker rmi connectivity_bridge_ros2_json_mqtt_image:latest

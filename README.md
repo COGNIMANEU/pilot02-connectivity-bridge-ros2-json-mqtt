@@ -150,9 +150,10 @@ Defines bidirectional bridges between ROS2 topics and MQTT topics.
 
 Each mapping defines the direction and type of translation between a ROS2 topic and an MQTT topic.
 
-+ action: `serialize` or `deserialize` (string, required)
++ action: `serialize` or `deserialize` or `none` (string, required)
   - `serialize`: Converts ROS2 messages to JSON and publishes to MQTT
   - `deserialize`: Converts JSON payload from MQTT into ROS2 messages
+  - `none`: For raw message forwarding without serialization (only works when the message format is already compatible with the target, e.g., string payloads)
 + type: `ros2mqtt` or `mqtt2ros` (string, required)
   - Direction of the message flow
 + input: `/demostatemessage` (string, required) - Source topic (ROS2 or MQTT)
