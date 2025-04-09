@@ -1,0 +1,58 @@
+services:
+
+  mqtt_broker:
+    image: eclipse-mosquitto:2
+    container_name: mqtt_broker
+    ports:
+      - "1883:1883"         # MQTT port
+      - "9001:9001"         # WebSocket port
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+
+  ros_json_mqtt_bridge:
+    build: 
+      context: ./src
+    container_name: ros_json_mqtt_bridge
+    environment:
+      - CONFIG_FILE=/ros_ws/config/config.yaml
+    volumes:
+      - ./config/demo/config.yaml:/ros_ws/config/config.yaml  
+    depends_on:
+      - mqtt_broker
+
+  test_mqtt_publisher_subscriber:
+    image: python:3.10-slim
+    container_name: mqtt_test_client
+    depends_on:
+      - mqtt_broker
+      - ros_json_mqtt_bridge
+    volumes:
+      - ./test:/test
+    working_dir: /test
+    command: ["bash", "run_test.sh"]
+
+  test_ros_publisher:
+    build:
+      context: ./test
+    container_name: ros_publisher
+    command: >
+      bash -c "source /opt/ros/humble/setup.bash && source /ros_ws/install/setup.bash &&
+               python3 /ros_ws/src/publisher_node.py"
+    depends_on:
+      - mqtt_broker
+      - ros_json_mqtt_bridge
+      - test_mqtt_publisher_subscriber
+
+  test_ros_subscriber:
+    build:
+      context: ./test
+    container_name: ros_subscriber
+    command: >
+      bash -c "source /opt/ros/humble/setup.bash && source /ros_ws/install/setup.bash &&
+               python3 /ros_ws/src/subscriber_node.py"
+    depends_on:
+      - mqtt_broker
+      - ros_json_mqtt_bridge
+      - test_mqtt_publisher_subscriber

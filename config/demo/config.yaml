@@ -1,0 +1,29 @@
+broker:
+  protocol: 'mqtt' 
+  host: 'mqtt_broker'
+  port: 1883 
+  user: ''
+  pass: ''
+  tls:
+    enabled: false  
+    ca_certificate: null
+    validate_certificate: false
+client:
+  id: test_ita
+  clean_session: true  
+  keep_alive_interval: 60
+  max_inflight: 65535
+  buffer:
+    size: 100
+    directory: "buffer"
+mappings:
+  - action: 'serialize'
+    type: 'ros2mqtt' 
+    input: '/demostatemessage'
+    output: '/demostatemessage'
+    msg_type: 'demo_messages/msg/DemoState' 
+  - action: 'deserialize'
+    input: '/democommandmessage'
+    type: 'mqtt2ros' 
+    output: '/democommandmessage'
+    msg_type: 'demo_messages/msg/DemoCommand' 
