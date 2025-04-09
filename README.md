@@ -1,10 +1,6 @@
 # Pilot02 Connectivity Json Bridge ROS2 MQTT (ROS2MQTTJsonBridge)
 
-This repository contains a docker based version of the https://github.com/ika-rwth-aachen/mqtt_client package that acts as a bridge between ROS2 topics and MQTT channels.
-
-## Description
-
-A bidirectional bridge between ROS2 and MQTT, enabling message exchange between ROS2 systems and other distributed systems through MQTT brokers using JSON serialization.
+This repository contains a bidirectional bridge between ROS2 and MQTT, enabling message exchange between ROS2 systems and other distributed systems through MQTT brokers using JSON serialization.
 
 Traditional ROS2 systems use binary message formats, which are not easily consumable by many cloud-based or non-ROS systems. Existing solutions like [`mqtt_bridge`](https://github.com/groove-x/mqtt_bridge) are no longer actively maintained. An alternative, [`mqtt_client`](https://github.com/ika-rwth-aachen/mqtt_client), supports bidirectional MQTT communication but transmits messages in a binary format, limiting interoperability.
 
