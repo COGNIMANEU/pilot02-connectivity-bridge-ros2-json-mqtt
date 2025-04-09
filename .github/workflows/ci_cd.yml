@@ -33,7 +33,7 @@ jobs:
     # 4. Build the Docker image
     - name: Build the Docker image
       run: | 
-        docker build ./src --file Dockerfile --tag connectivity_bridge_ros2_json_mqtt_image:latest
+        docker build ./src --file ./src/Dockerfile --tag connectivity_bridge_ros2_json_mqtt_image:latest
 
     # 5. Run the services using docker-compose, wait for 1 minute, then pass
     - name: Launch services and wait for 1 minute
