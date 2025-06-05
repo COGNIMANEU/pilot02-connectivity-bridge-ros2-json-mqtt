@@ -91,74 +91,121 @@ def ros_to_json(msg: Any) -> Dict:
     #logger.debug(f"Finished serializing message. Result: {result}")
     return result
 
-def json_to_ros(json_data: Dict, msg_type: str) -> Any:
+primitive_types = {
+    'bool', 'int8', 'byte', 'char', 'uint8', 'int16', 'uint16',
+    'int32', 'uint32', 'int64', 'uint64', 'float32', 'float64', 'string'
+}
+
+def json_to_ros(json_data: Dict, msg_type: str = None, msg_instance: Any = None) -> Any:
     """
     Convert a JSON-compatible dictionary to a ROS2 message object.
-    
+
     Args:
         json_data: Dictionary containing the message data
-        msg_type: The ROS2 message type (e.g., 'std_msgs/msg/String')
-        
+        msg_type: The ROS2 message type string (e.g., 'geometry_msgs/msg/Pose'). 
+                  Required if msg_instance is None.
+        msg_instance: An existing ROS2 message instance to fill. If given, msg_type is optional.
+
     Returns:
-        An instance of the specified ROS2 message type
+        An instance of the specified ROS2 message type with fields populated from json_data.
     """
     if json_data is None:
         return None
-        
-    # Parse the message type string (format: "package/msg/Type")
-    parts = msg_type.split('/')
-    if len(parts) != 3 or parts[1] != 'msg':
-        raise ValueError(f"Invalid message type format: {msg_type}. Expected 'package/msg/Type'")
-    
-    package_name, _, message_name = parts
-    
-    # Import the module and get the message class dynamically
-    try:
-        module = importlib.import_module(f'{package_name}.msg')
-        message_class = getattr(module, message_name)
-    except (ImportError, AttributeError) as e:
-        raise ValueError(f"Could not import message type {msg_type}: {str(e)}")
-    
-    # Create an empty message instance
-    msg = message_class()
-    
-    # Get all fields from the message
-    fields = msg.get_fields_and_field_types()
-    
+
+    if msg_instance is None:
+        if msg_type is None:
+            raise ValueError("Either msg_type or msg_instance must be provided")
+        # Parse message type "package/msg/Type"
+        parts = msg_type.split('/')
+        if len(parts) != 3 or parts[1] != 'msg':
+            raise ValueError(f"Invalid message type format: {msg_type}. Expected 'package/msg/Type'")
+        package_name, _, message_name = parts
+        # Import the message class dynamically
+        try:
+            module = importlib.import_module(f'{package_name}.msg')
+            message_class = getattr(module, message_name)
+        except (ImportError, AttributeError) as e:
+            raise ValueError(f"Could not import message type {msg_type}: {str(e)}")
+        msg_instance = message_class()
+    else:
+        message_class = type(msg_instance)
+
+    fields = msg_instance.get_fields_and_field_types()
+
     for field_name, field_type in fields.items():
         if field_name not in json_data:
-            continue  # Use default value if field not in JSON
-            
+            continue  # keep default if field not in input
+
         value = json_data[field_name]
-        
-        # Handle nested ROS messages recursively
-        if hasattr(message_class, field_name) and hasattr(getattr(message_class, field_name), 'get_fields_and_field_types'):
-            # For nested messages, construct the full type string
-            nested_parts = field_type.split('/')
-            if len(nested_parts) == 1:
-                # Handle nested types in the same package
-                nested_msg_type = f"{package_name}/msg/{field_type}"
+
+        # Detect if field is an array (e.g. 'int32[3]' or 'geometry_msgs/msg/Point[]')
+        is_array = False
+        array_size = None
+        base_type = field_type
+
+        if '[' in field_type and ']' in field_type:
+            is_array = True
+            base_type = field_type[:field_type.index('[')]
+            size_str = field_type[field_type.index('[')+1:field_type.index(']')]
+            if size_str != '':
+                array_size = int(size_str)  # fixed size array
+
+        def is_primitive(t):
+            return t in primitive_types
+
+        if is_array:
+            if not isinstance(value, (list, tuple)):
+                raise ValueError(f"Expected list/tuple for array field '{field_name}', got {type(value)}")
+
+            if array_size is not None and len(value) != array_size:
+                raise ValueError(f"Field '{field_name}' expects fixed size array of length {array_size}, got {len(value)}")
+
+            if is_primitive(base_type):
+                if base_type in ['byte', 'char']:
+                    setattr(msg_instance, field_name, bytes(value))
+                else:
+                    setattr(msg_instance, field_name, value)
             else:
-                # Handle fully qualified nested types
-                nested_msg_type = field_type.replace('.', '/')
-            setattr(msg, field_name, json_to_ros(value, nested_msg_type))
-        # Handle arrays/lists
-        elif isinstance(value, (list, tuple)):
-            element_type = field_type.split('[')[0]  # Extract type from something like 'int32[3]'
-            if element_type in ['byte', 'char']:
-                setattr(msg, field_name, bytes(value))
-            else:
-                setattr(msg, field_name, value)
-        # Handle primitive types
-        elif isinstance(value, list) and isinstance(value[0], (int, float)):  # For lists of numbers (e.g., floats or ints)
-            setattr(msg, field_name, value)
-        # Handle numpy ndarray when deserializing
-        elif isinstance(value, list):
-            setattr(msg, field_name, np.array(value))  # Convert list back to ndarray
+                ros_list = []
+                if '/' not in base_type:
+                    if msg_type is not None:
+                        parent_package = msg_type.split('/')[0]
+                        nested_msg_type = f"{parent_package}/msg/{base_type}"
+                    else:
+                        module_name = message_class.__module__
+                        parent_package = module_name.split('.')[0] if '.' in module_name else module_name
+                        nested_msg_type = f"{parent_package}/msg/{base_type}"
+                else:
+                    nested_msg_type = base_type.replace('.', '/')
+                for item in value:
+                    ros_list.append(json_to_ros(item, nested_msg_type))
+                setattr(msg_instance, field_name, ros_list)
+
         else:
-            setattr(msg, field_name, value)
-            
-    return msg
+            if is_primitive(base_type):
+                setattr(msg_instance, field_name, value)
+            else:
+                # Nested message field: if value is dict, recurse; else assign directly
+                if isinstance(value, dict):
+                    if '/' not in base_type:
+                        if msg_type is not None:
+                            parent_package = msg_type.split('/')[0]
+                            nested_msg_type = f"{parent_package}/msg/{base_type}"
+                        else:
+                            module_name = message_class.__module__
+                            parent_package = module_name.split('.')[0] if '.' in module_name else module_name
+                            nested_msg_type = f"{parent_package}/msg/{base_type}"
+                    else:
+                        nested_msg_type = base_type.replace('.', '/')
+
+                    nested_msg_instance = getattr(msg_instance, field_name)
+                    populated_nested = json_to_ros(value, nested_msg_type, nested_msg_instance)
+                    setattr(msg_instance, field_name, populated_nested)
+                else:
+                    # If value is not dict, assign directly (handles primitives inside nested msgs)
+                    setattr(msg_instance, field_name, value)
+
+    return msg_instance
     
 class MQTTROSBridge(Node):
     def __init__(self, config_path):
